@@ -13,7 +13,6 @@ Build-Depends:
  autotools-dev,
  debhelper (>= 9),
  dh-autoreconf,
- dh-systemd,
  groff-base,
  libedit-dev,
  libncurses-dev,
