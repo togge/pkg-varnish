@@ -105,6 +105,7 @@ EXP_Clr(struct exp *e)
 EXP_ACCESS(ttl, -1., (e->grace = e->keep = -1.))
 EXP_ACCESS(grace, 0., )
 EXP_ACCESS(keep, 0.,)
+EXP_ACCESS(entered, 0.,)
 
 /*--------------------------------------------------------------------
  * Calculate an objects effective keep, grace or ttl time, suitably

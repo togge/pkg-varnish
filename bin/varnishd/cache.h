@@ -671,6 +671,7 @@ void BAN_Compile(void);
 struct ban *BAN_RefBan(struct objcore *oc, double t0, const struct ban *tail);
 void BAN_TailDeref(struct ban **ban);
 double BAN_Time(const struct ban *ban);
+void BAN_Set_Soft(struct ban *b, int soft);
 
 /* cache_center.c [CNT] */
 void CNT_Session(struct sess *sp);
@@ -688,9 +689,11 @@ void EXP_Clr(struct exp *e);
 double EXP_Get_ttl(const struct exp *e);
 double EXP_Get_grace(const struct exp *e);
 double EXP_Get_keep(const struct exp *e);
+double EXP_Get_entered(const struct exp *e);
 void EXP_Set_ttl(struct exp *e, double v);
 void EXP_Set_grace(struct exp *e, double v);
 void EXP_Set_keep(struct exp *e, double v);
+void EXP_Set_entered(struct exp *e, double v);
 
 double EXP_Ttl(const struct sess *, const struct object*);
 double EXP_Grace(const struct sess *, const struct object*);

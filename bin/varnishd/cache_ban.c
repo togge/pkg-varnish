@@ -65,6 +65,7 @@ struct ban {
 	unsigned		flags;
 #define BAN_F_GONE		(1 << 0)
 #define BAN_F_REQ		(1 << 2)
+#define BAN_F_SOFT		(1 << 3)	/* soft ban, aka grace */
 #define BAN_F_LURK		(3 << 6)	/* ban-lurker-color */
 	VTAILQ_HEAD(,objcore)	objcore;
 	struct vsb		*vsb;
@@ -376,7 +377,11 @@ BAN_Insert(struct ban *b)
 
 	t0 = TIM_real();
 	memcpy(b->spec, &t0, sizeof t0);
-	b->spec[12] = (b->flags & BAN_F_REQ) ? 1 : 0;
+	b->spec[12] = 0;
+	if (b->flags & BAN_F_REQ)
+		b->spec[12] |= 0x1;
+	if (b->flags & BAN_F_SOFT)
+		b->spec[12] |= 0x2;
 	memcpy(b->spec + 13, VSB_data(b->vsb), ln);
 	ln += 13;
 	vbe32enc(b->spec + 8, ln);
@@ -526,8 +531,10 @@ BAN_Reload(const uint8_t *ban, unsigned len)
 	AN(b2->spec);
 	memcpy(b2->spec, ban, len);
 	b2->flags |= gone;
-	if (ban[12])
+	if (ban[12] & 0x01)
 		b2->flags |= BAN_F_REQ;
+	if (ban[12] & 0x02)
+		b2->flags |= BAN_F_SOFT;
 	if (b == NULL)
 		VTAILQ_INSERT_TAIL(&ban_head, b2, list);
 	else
@@ -555,6 +562,21 @@ BAN_Time(const struct ban *b)
 
 	CHECK_OBJ_NOTNULL(b, BAN_MAGIC);
 	return (ban_time(b->spec));
+}
+
+/*--------------------------------------------------------------------
+ * Set/unset the soft flag on a ban
+ */
+
+void
+BAN_Set_Soft(struct ban *b, int soft)
+{
+
+	CHECK_OBJ_NOTNULL(b, BAN_MAGIC);
+	if (soft)
+		b->flags |= BAN_F_SOFT;
+	else
+		b->flags &= ~BAN_F_SOFT;
 }
 
 /*--------------------------------------------------------------------
@@ -653,7 +675,7 @@ ban_check_object(struct object *o, const struct sess *sp, int has_req)
 	struct ban *b;
 	struct objcore *oc;
 	struct ban * volatile b0;
-	unsigned tests, skipped;
+	unsigned tests, skipped, soft;
 
 	CHECK_OBJ_NOTNULL(sp, SESS_MAGIC);
 	CHECK_OBJ_NOTNULL(o, OBJECT_MAGIC);
@@ -674,6 +696,7 @@ ban_check_object(struct object *o, const struct sess *sp, int has_req)
 	 */
 	tests = 0;
 	skipped = 0;
+	soft = 0;
 	for (b = b0; b != oc->ban; b = VTAILQ_NEXT(b, list)) {
 		CHECK_OBJ_NOTNULL(b, BAN_MAGIC);
 		if (b->flags & BAN_F_GONE)
@@ -690,15 +713,21 @@ ban_check_object(struct object *o, const struct sess *sp, int has_req)
 			 * be other bans that match, so we soldier on
 			 */
 			skipped++;
-		} else if (ban_evaluate(b->spec, o->http, sp->http, &tests))
+		} else if (ban_evaluate(b->spec, o->http, sp->http, &tests)) {
+			if (b->flags & BAN_F_SOFT) {
+				soft = 1;
+				continue;
+			}
+			soft = 0; /* Found hard ban */
 			break;
+		}
 	}
 
 	Lck_Lock(&ban_mtx);
 	VSC_C_main->n_ban_obj_test++;
 	VSC_C_main->n_ban_re_test += tests;
 
-	if (b == oc->ban && skipped > 0) {
+	if (b == oc->ban && skipped > 0 && soft == 0) {
 		AZ(has_req);
 		Lck_Unlock(&ban_mtx);
 		/*
@@ -717,10 +746,20 @@ ban_check_object(struct object *o, const struct sess *sp, int has_req)
 	}
 	Lck_Unlock(&ban_mtx);
 
-	if (b == oc->ban) {	/* not banned */
+	if (soft == 0 && b == oc->ban) {	/* not banned */
 		oc->ban = b0;
 		oc_updatemeta(oc);
 		return (0);
+	} else if (soft) {
+		/* Softban, set ttl to now */
+		EXP_Set_ttl(&o->exp, TIM_real() -
+			    EXP_Get_entered(&o->exp));
+		oc->ban = b0;
+		oc_updatemeta(oc);
+		/* XXX: no req in lurker */
+		WSP(sp, SLT_ExpBan, "%u was softbanned", o->xid);
+		EXP_Rearm(o);
+		return (2);
 	} else {
 		EXP_Clr(&o->exp);
 		oc->ban = NULL;
@@ -978,6 +1017,9 @@ ccf_ban(struct cli *cli, const char * const *av, void *priv)
 		VCLI_SetResult(cli, CLIS_CANT);
 		return;
 	}
+	if (strcmp(av[1], "softban") == 0) {
+		b->flags |= BAN_F_SOFT;
+	}
 	for (i = 0; i < narg; i += 4)
 		if (BAN_AddTest(cli, b, av[i + 2], av[i + 3], av[i + 4])) {
 			BAN_Free(b);
@@ -1075,6 +1117,7 @@ ccf_ban_list(struct cli *cli, const char * const *av, void *priv)
 static struct cli_proto ban_cmds[] = {
 	{ CLI_BAN_URL,				"", ccf_ban_url },
 	{ CLI_BAN,				"", ccf_ban },
+	{ CLI_SOFTBAN,				"", ccf_ban },
 	{ CLI_BAN_LIST,				"", ccf_ban_list },
 	{ NULL }
 };

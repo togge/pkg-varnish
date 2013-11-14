@@ -151,8 +151,8 @@ const char *VRT_regsub(const struct sess *sp, int all, const char *,
     void *, const char *);
 
 void VRT_panic(const struct sess *sp, const char *, ...);
-void VRT_ban(struct sess *sp, char *, ...);
-void VRT_ban_string(struct sess *sp, const char *);
+void VRT_ban(struct sess *sp, int, char *, ...);
+void VRT_ban_string(struct sess *sp, int, const char *);
 void VRT_purge(const struct sess *sp, double ttl, double grace);
 
 void VRT_count(const struct sess *, unsigned);

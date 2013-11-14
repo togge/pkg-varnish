@@ -78,6 +78,13 @@
 	"\tList the active bans.",					\
 	0, 0
 
+#define CLI_SOFTBAN							\
+	"softban",							\
+	"softban <field> <operator> <arg> [&& <field> <oper> <arg>]...",	\
+	"\tAll objects where the all the conditions match will be "	\
+	    "marked obsolete, but still eligible for grace.",		\
+	3, UINT_MAX
+
 #define CLI_VCL_LOAD							\
 	"vcl.load",							\
 	"vcl.load <configname> <filename>",				\
