@@ -1,0 +1,54 @@
+varnishtest "Softbans from CLI"
+
+server s1 {
+	rxreq
+	txresp
+
+	rxreq
+	sema r2 sync 2
+	txresp
+} -start
+
+varnish v1 -vcl+backend {
+	sub vcl_hit {
+	    set req.http.ttl = obj.ttl;
+	    if (obj.ttl <= 1s) {
+	    	    set req.http.grace = "t";
+	    }
+	}
+	sub vcl_fetch { 
+		set beresp.ttl = 1m;
+		set beresp.grace = 1m; 
+	}
+	sub vcl_deliver {
+	    set resp.http.grace = req.http.grace;
+	    set resp.http.ttl = req.http.ttl;
+	}
+} -start
+
+client c1 {
+	txreq -hdr "client: c1-1"
+	rxresp
+	expect resp.status == 200
+} -run
+
+varnish v1 -cliok "softban req.url ~ ^"
+
+client c1 {
+	txreq -hdr "client: c1-2"
+	sema r1 sync 2
+	rxresp
+	expect resp.http.grace != "t"
+} -start
+
+client c2 {
+	sema r1 sync 2
+	delay 1
+	txreq -hdr "client: c2-1"
+	rxresp
+	sema r2 sync 2
+	expect resp.http.grace == "t"
+	expect resp.status == 200
+} -run
+
+client c1 -wait
